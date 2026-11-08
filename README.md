@@ -1,1 +1,53 @@
-# winter-runner
+# Luca-Surfers – Winter-Edition
+
+Ein 3D-Endless-Runner im Browser (Three.js). Läuft komplett ohne Server.
+
+## Spielen
+
+- **Lokal:** `index.html` per Doppelklick im Browser öffnen (Chrome, Edge, Firefox).
+- **Online:** über GitHub Pages (siehe unten).
+
+## Steuerung
+
+| Taste | Aktion |
+|---|---|
+| ← → / A D | Gleis wechseln |
+| ↑ / W / Leertaste | Springen |
+| ↓ / S | Rollen (in der Luft: schnell runter) |
+| E | Boost – nur in den ersten 10 Sekunden einer Runde |
+| P / Esc | Pause |
+| M | Ton an/aus |
+
+## Features
+
+- Winter-Map mit Schneefall, Tannen, Lichterketten, Häusern und Schneemännern
+- Stehende und entgegenkommende Züge, Rampen auf die Zugdächer, Barrieren zum Springen/Rollen
+- Start-Boost (ca. 650 m Raketenflug)
+- Münzen, die man auch komplett meiden kann → **No-Coin-Lauf** mit eigenem Rekord
+- Power-ups: Magnet, Super-Sprung, Jetpack, 2x-Punkte
+- Highscores werden lokal im Browser gespeichert
+- Musik und Soundeffekte werden live synthetisiert (Jingle Bells, gemeinfrei). Eigene MP3 lokal ladbar.
+
+## Projektstruktur
+
+```
+index.html          Seite + Menüs
+css/style.css       HUD / Menü-Design
+lib/three.min.js    Three.js r160 (MIT)
+js/core.js          Konstanten, Seed-Zufallsgenerator
+js/storage.js       Highscores (localStorage)
+js/audio.js         Sounds + Musik (Web Audio)
+js/models.js        3D-Modelle aus Grundformen
+js/maps/winter.js   Winter-Map (Farben, Deko) – neue Maps = neue Datei
+js/world.js         Streckengenerator, Hindernisse, Münzen, Power-ups
+js/player.js        Spielfigur, Physik, Animation
+js/game.js          Spielschleife, Steuerung, Kollisionen, HUD
+```
+
+Die Strecke wird aus einem Seed erzeugt: gleicher Seed = gleiche Strecke. Das ist die Grundlage für den späteren Multiplayer.
+
+## Geplant
+
+- Multiplayer (bis 4 Spieler, gleiche Strecke, live)
+- Shop mit Figuren und Gadgets
+- Weitere Maps

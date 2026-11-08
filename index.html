@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luca-Surfers</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="game"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="powerups"></div>
+  <div id="stats">
+    <div id="score">0</div>
+    <div id="coins"><span class="coin-icon"></span><span id="coinCount">0</span></div>
+    <div id="mult" class="hidden">x2</div>
+    <div id="dist">0 m</div>
+    <div id="nocoin" class="hidden">NO COIN</div>
+  </div>
+  <div id="boostPrompt" class="hidden">
+    <div class="key">E</div>
+    <div>BOOST <span id="boostTime">10</span>s</div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<!-- Main menu -->
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>LUCA<span>-</span>SURFERS</h1>
+    <div class="sub">Winter-Edition</div>
+    <button id="startBtn" class="big">Los geht's</button>
+    <div class="records" id="records"></div>
+    <div class="controls">
+      <div><b>← → / A D</b> Gleis wechseln</div>
+      <div><b>↑ / W / Leertaste</b> Springen</div>
+      <div><b>↓ / S</b> Rollen</div>
+      <div><b>E</b> Boost (erste 10 s)</div>
+      <div><b>P / Esc</b> Pause</div>
+      <div><b>M</b> Ton an/aus</div>
+    </div>
+    <div class="settings">
+      <label>Musik <input type="range" id="musicVol" min="0" max="100" value="35"></label>
+      <label>Effekte <input type="range" id="sfxVol" min="0" max="100" value="70"></label>
+      <label class="file">Eigene Musik (MP3, nur lokal)<input type="file" id="musicFile" accept="audio/*"></label>
+    </div>
+  </div>
+</div>
+
+<!-- Pause -->
+<div id="pause" class="overlay hidden">
+  <div class="panel small">
+    <h2>Pause</h2>
+    <button id="resumeBtn" class="big">Weiter</button>
+    <button id="quitBtn">Hauptmenü</button>
+  </div>
+</div>
+
+<!-- Game over -->
+<div id="over" class="overlay hidden">
+  <div class="panel small">
+    <h2>Crash!</h2>
+    <div id="newRecord" class="hidden">NEUER REKORD!</div>
+    <div class="result">
+      <div><span>Punkte</span><b id="rScore">0</b></div>
+      <div><span>Strecke</span><b id="rDist">0 m</b></div>
+      <div><span>Münzen</span><b id="rCoins">0</b></div>
+      <div id="rNoCoinRow" class="hidden"><span>No-Coin-Lauf</span><b id="rNoCoin">0 m</b></div>
+    </div>
+    <button id="againBtn" class="big">Nochmal (Enter)</button>
+    <button id="menuBtn">Hauptmenü</button>
+  </div>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/models.js"></script>
+<script src="js/maps/winter.js"></script>
+<script src="js/world.js"></script>
+<script src="js/player.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
