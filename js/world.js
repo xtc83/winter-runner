@@ -60,7 +60,7 @@ LS.World = class {
     this.decor = [];
     this.genD = 70;        // first obstacles after a calm run-up
     this.decoD = -30;
-    this.prevFree = 1;
+    this.lastPattern = null;
     this.safe = [];        // [{from,to}] distances with no obstacles (boost / jetpack landing)
   }
 
@@ -131,99 +131,160 @@ LS.World = class {
     }
   }
 
+  // ---------------- pattern-based generation ----------------
+  // Each block is a hand-designed section (mirrored at random). Every section keeps at
+  // least one route that is passable without collecting coins.
   genBlock(d0) {
     const C = LS.CFG, rng = this.rng;
-    const k = LS.clamp(d0 / 3000, 0, 1); // difficulty 0..1
     const speed = this.speedAt(d0);
-    const gap = 9 + speed * 0.55;
-    const at = d0 + 10; // obstacle line of this block
+    const gap = 8 + speed * 0.5;
 
-    if (this.isSafe(d0, d0 + 60)) {
-      this.genD = d0 + 30;
-      return;
-    }
+    if (this.isSafe(d0, d0 + 60)) { this.genD = d0 + 30; return; }
 
-    // a lane that is always passable without coins (keeps no-coin runs possible)
-    let free = this.prevFree + rng.int(-1, 1);
-    free = LS.clamp(free, 0, 2);
-    this.prevFree = free;
-
-    const types = [null, null, null];
-    const lens = [0, 0, 0];
-    let maxLen = 1;
-    const pattern = d0 > 400 && rng.chance(0.12 + 0.1 * k) ? 'row' : 'lanes';
-
-    if (pattern === 'row') {
-      for (let l = 0; l < 3; l++) types[l] = rng.chance(0.5) ? 'hurdle' : 'overhead';
-    } else {
-      for (let l = 0; l < 3; l++) {
-        if (l === free) continue;
-        const w = [
-          ['none', 0.28 - 0.15 * k], ['hurdle', 0.2], ['overhead', 0.17],
-          ['train', 0.14 + 0.1 * k], ['ramp', 0.14], ['moving', d0 > 350 ? 0.05 + 0.12 * k : 0],
-        ];
-        types[l] = this.weighted(w);
-      }
-      // never block both non-free lanes with moving trains
-      if (types.filter((t) => t === 'moving').length > 1) types[types.indexOf('moving')] = 'train';
-    }
-
-    for (let l = 0; l < 3; l++) {
-      const t = types[l];
-      if (!t || t === 'none') continue;
-      const x = C.LANES[l];
-      if (t === 'hurdle') this.addObstacle({ type: t, lane: l, x, w: 2.2, y0: 0, y1: 1.05, dNear: at, len: 0.3, mesh: LS.Models.hurdle() });
-      else if (t === 'overhead') this.addObstacle({ type: t, lane: l, x, w: 2.2, y0: 1.35, y1: 2.25, dNear: at, len: 0.3, mesh: LS.Models.overhead() });
-      else if (t === 'train' || t === 'ramp') {
-        const len = rng.pick([10.5, 21.5, 21.5, 32.5]);
-        const off = t === 'ramp' ? 7 : 0;
-        this.addObstacle({ type: 'train', lane: l, x, w: C.TRAIN_W, y0: 0, y1: C.TRAIN_H, dNear: at + off, len, mesh: LS.Models.train(len, rng, false) });
-        if (t === 'ramp') this.addObstacle({ type: 'ramp', lane: l, x, w: C.TRAIN_W, y0: 0, y1: C.TRAIN_H, dNear: at, len: 7, mesh: LS.Models.ramp(7) });
-        lens[l] = len;
-        maxLen = Math.max(maxLen, len + off);
-      } else if (t === 'moving') {
-        const len = rng.pick([10.5, 21.5]);
-        this.addObstacle({ type: 'train', lane: l, x, w: C.TRAIN_W, y0: 0, y1: C.TRAIN_H, dNear: at + 30, len, mesh: LS.Models.train(len, rng, true), moving: true, speed: 9 });
-        maxLen = Math.max(maxLen, len + 30);
-      }
-    }
-
-    // ----- coins: one lane, never the free lane (unless it's a row) -----
-    let coinLanes = [0, 1, 2].filter((l) => l !== free && types[l] !== 'train' && types[l] !== 'moving');
-    if (pattern === 'row') coinLanes = [0, 1, 2];
-    if (coinLanes.length && rng.chance(0.85)) {
-      const cl = rng.pick(coinLanes);
-      const t = types[cl];
-      const x = C.LANES[cl];
-      const slots = [];
-      if (t === 'hurdle') {
-        for (let i = 0; i < 9; i++) {
-          const dd = at - 8 + i * 2;
-          const u = (dd - (at - 5)) / 10;
-          slots.push([dd, 0.9 + (u > 0 && u < 1 ? Math.sin(u * Math.PI) * 1.6 : 0)]);
+    const flip = rng.chance(0.5);
+    const L = (l) => (flip ? 2 - l : l);
+    const blk = { obs: [], end: d0 };
+    const self = this;
+    const X = (l) => C.LANES[L(l)];
+    const B = {
+      train(l, d, len, opt = {}) {
+        if (opt.ramp) {
+          self.addObstacle({ type: 'ramp', lane: L(l), x: X(l), w: C.TRAIN_W, y0: 0, y1: C.TRAIN_H, dNear: d - 7, len: 7, mesh: LS.Models.ramp(7) });
         }
-      } else if (t === 'overhead') {
-        for (let i = 0; i < 7; i++) slots.push([at - 5 + i * 2, 0.5]);
-      } else if (t === 'ramp') {
-        const trainLen = lens[cl];
-        for (let dd = at + 1; dd < at + 7 + trainLen - 1; dd += 2) {
-          const y = dd < at + 7 ? (dd - at) / 7 * C.TRAIN_H : C.TRAIN_H;
-          slots.push([dd, y + 0.9]);
-        }
-      } else {
-        const n = rng.int(6, 10);
-        for (let i = 0; i < n; i++) slots.push([at - 6 + i * 2, 0.9]);
+        const o = { type: 'train', lane: L(l), x: X(l), w: C.TRAIN_W, y0: 0, y1: C.TRAIN_H, dNear: d, len,
+          mesh: LS.Models.train(len, rng, !!opt.moving), moving: !!opt.moving, speed: 9 };
+        self.addObstacle(o); blk.obs.push({ l: L(l), d, len, kind: opt.ramp ? 'rampTrain' : 'train' });
+        blk.end = Math.max(blk.end, d + len);
+      },
+      hurdle(l, d) {
+        self.addObstacle({ type: 'hurdle', lane: L(l), x: X(l), w: 2.2, y0: 0, y1: 1.05, dNear: d, len: 0.3, mesh: LS.Models.hurdle() });
+        blk.obs.push({ l: L(l), d, kind: 'hurdle' }); blk.end = Math.max(blk.end, d + 1);
+      },
+      overhead(l, d) {
+        self.addObstacle({ type: 'overhead', lane: L(l), x: X(l), w: 2.2, y0: 1.38, y1: 2.26, dNear: d, len: 1.0, mesh: LS.Models.overhead() });
+        blk.obs.push({ l: L(l), d, kind: 'overhead' }); blk.end = Math.max(blk.end, d + 1);
+      },
+      // coin line that follows ramps, roofs, hurdles (arc) and overheads (low)
+      coins(l, from, to, step = 2.2, over = false) {
+        const lane = L(l);
+        const slots = [];
+        for (let d = from; d <= to; d += step) slots.push([d, self.coinY(blk, lane, d, over)]);
+        let pu = -1;
+        if (d0 > 150 && rng.chance(0.1)) pu = Math.floor(slots.length / 2);
+        slots.forEach(([d, y], i) => {
+          if (i === pu) self.addPowerup(self.weighted([['magnet', 0.3], ['sneakers', 0.25], ['double', 0.3], ['jetpack', 0.15]]), C.LANES[lane], d, y + 0.2);
+          else self.addCoin(C.LANES[lane], d, y);
+        });
+      },
+    };
+
+    const s = d0 + 4;
+    const k = LS.clamp(d0 / 2500, 0, 1);
+    const pats = [
+      ['wall', 1.0], ['corridor', 0.9], ['rooftop', 1.0], ['slalom', 0.9],
+      ['stairs', d0 > 250 ? 0.8 : 0], ['oncoming', d0 > 300 ? 0.5 + 0.6 * k : 0],
+      ['barriers', d0 > 200 ? 0.5 + 0.4 * k : 0], ['jumpRoll', d0 > 400 ? 0.6 : 0], ['stepUp', d0 > 120 ? 0.8 : 0],
+    ].filter(([p]) => p !== this.lastPattern);
+    const pat = this.weighted(pats);
+    this.lastPattern = pat;
+    const long = () => rng.pick([21.5, 32.5]);
+
+    switch (pat) {
+      case 'wall': { // two lanes blocked by trains, third lane open with a barrier
+        const open = rng.int(0, 2);
+        const len = long();
+        [0, 1, 2].filter((l) => l !== open).forEach((l, i) => B.train(l, s + i * rng.int(0, 6), len));
+        const ob = rng.chance(0.5) ? 'hurdle' : 'overhead';
+        B[ob](open, s + len * 0.5);
+        if (rng.chance(0.5)) B.train([0, 1, 2].find((l) => l !== open), s + len + 2, 10.5); // keeps you guessing
+        // coins on top of one wall train (bonus, needs super jump / jetpack) – open lane stays coin-free
+        break;
       }
-      // power-up replaces one coin now and then
-      let puSlot = -1;
-      if (d0 > 150 && rng.chance(0.11)) puSlot = Math.floor(slots.length / 2);
-      slots.forEach(([dd, y], i) => {
-        if (i === puSlot) this.addPowerup(this.weighted([['magnet', 0.3], ['sneakers', 0.25], ['double', 0.3], ['jetpack', 0.15]]), x, dd, y + 0.2);
-        else this.addCoin(x, dd, y);
-      });
+      case 'corridor': { // trains left and right, barriers in the middle lane
+        const len = 32.5;
+        B.train(0, s, len); B.train(2, s + rng.int(0, 4), len);
+        B.hurdle(1, s + 8);
+        B[rng.chance(0.5) ? 'overhead' : 'hurdle'](1, s + 22);
+        if (rng.chance(0.4)) B.coins(0, s + 2, s + len - 2); // roof coins: optional
+        break;
+      }
+      case 'rooftop': { // ramp onto a long train row, neighbour trains to hop across
+        const len = 32.5;
+        B.train(0, s + 7, len, { ramp: true });
+        B.train(1, s + 14, 21.5);
+        B.hurdle(2, s + 12);
+        B.overhead(2, s + 30);
+        B.coins(0, s + 1, s + 7 + len - 2);
+        break;
+      }
+      case 'stairs': { // climb up, then hop from roof to roof across all lanes
+        B.train(0, s + 7, 21.5, { ramp: true });
+        B.train(1, s + 20, 32.5);
+        B.train(2, s + 57, 10.5); // after the middle train ends, so the ground route stays open
+        B.coins(0, s + 1, s + 26);
+        B.coins(1, s + 30, s + 50);
+        break;
+      }
+      case 'slalom': { // alternating blocks force lane changes
+        B.train(0, s, 10.5); B.hurdle(1, s + 4);
+        B.train(2, s + 20, 10.5); B.overhead(1, s + 24);
+        B.train(0, s + 40, 10.5); B.hurdle(1, s + 44);
+        B.coins(1, s, s + 48);
+        break;
+      }
+      case 'oncoming': { // a train coming at you, a ramp train next to it
+        B.train(1, s + 45, 21.5, { moving: true });
+        B.train(0, s + 10, 32.5, { ramp: true });
+        B.hurdle(2, s + 18);
+        B.coins(0, s + 4, s + 40);
+        break;
+      }
+      case 'barriers': { // all three lanes blocked: jump or roll
+        const t1 = rng.chance(0.5) ? 'hurdle' : 'overhead';
+        [0, 1, 2].forEach((l) => B[t1](l, s + 6));
+        if (rng.chance(0.6)) {
+          const t2 = t1 === 'hurdle' ? 'overhead' : 'hurdle';
+          [0, 1, 2].forEach((l) => B[t2](l, s + 22));
+        }
+        B.coins(rng.int(0, 2), s, s + 26);
+        break;
+      }
+      case 'stepUp': { // jump onto the beam, then from the beam onto the train roof
+        const lane = rng.int(0, 2);
+        B.overhead(lane, s + 8);
+        B.train(lane, s + 12.5, 32.5);
+        const other = [0, 1, 2].filter((l) => l !== lane);
+        B.hurdle(other[0], s + 16);
+        if (rng.chance(0.5)) B.train(other[1], s + 20, 21.5);
+        B.coins(lane, s + 2, s + 40, 2.2, true); // coins show the route: up the beam, onto the roof
+        break;
+      }
+      case 'jumpRoll': { // quick jump-roll combo in one lane, trains beside
+        const open = rng.int(0, 2);
+        [0, 1, 2].filter((l) => l !== open).forEach((l) => B.train(l, s, 21.5));
+        B.hurdle(open, s + 5); B.overhead(open, s + 15);
+        break;
+      }
     }
 
-    this.genD = at + maxLen + gap;
+    this.genD = blk.end + gap;
+  }
+
+  // coin height for a lane position, considering the current block's obstacles
+  coinY(blk, lane, d, over) {
+    const C = LS.CFG;
+    let y = 0.9;
+    for (const o of this.obstacles) {
+      if (o.lane !== lane) continue;
+      const od = -o.zNear;
+      if (o.type === 'train' && !o.moving && d >= od && d <= od + o.len) y = Math.max(y, C.TRAIN_H + 0.9);
+      else if (o.type === 'ramp' && d >= od && d <= od + o.len) y = Math.max(y, (d - od) / o.len * C.TRAIN_H + 0.9);
+      else if (o.type === 'hurdle' && Math.abs(d - od) < 5) y = Math.max(y, 0.9 + Math.cos((d - od) / 5 * Math.PI / 2) * 1.6);
+      else if (o.type === 'overhead' && over && d > od - 5 && d < od + 5) {
+        y = Math.max(y, d < od ? 0.9 + 2.3 * (1 - (od - d) / 5) : C.TRAIN_H + 0.9);
+      } else if (o.type === 'overhead' && !over && Math.abs(d - od) < 1.5) y = 0.5;
+    }
+    return y;
   }
 
   weighted(list) {
@@ -270,11 +331,10 @@ LS.World = class {
   surfaceAt(x, z, y) {
     let h = 0;
     for (const o of this.obstacles) {
-      if (o.type !== 'train' && o.type !== 'ramp') continue;
       if (Math.abs(x - o.x) > 0.95) continue;
       if (z > o.zNear || z < o.zFar) continue;
       let s;
-      if (o.type === 'train') s = o.y1;
+      if (o.type !== 'ramp') s = o.y1; // trains, hurdles and overhead beams are walkable on top
       else s = ((o.zNear - z) / (o.zNear - o.zFar)) * o.y1;
       if (y >= s - 0.6 && s > h) h = s;
     }

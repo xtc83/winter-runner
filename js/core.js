@@ -6,13 +6,14 @@ LS.CFG = {
   PLAYER_W: 0.8,
   PLAYER_H: 1.8,
   PLAYER_H_ROLL: 0.85,
-  GRAVITY: 55,
-  JUMP_H: 1.7,          // normal jump height
-  JUMP_H_SNEAKER: 4.4,  // super sneakers clear trains
-  ROLL_TIME: 0.6,
-  SPEED_START: 14,
-  SPEED_MAX: 34,
-  SPEED_RAMP: 160,      // metres per +1 m/s
+  GRAVITY: 42,
+  JUMP_H: 2.0,          // normal jump height
+  JUMP_H_SNEAKER: 4.6,  // super sneakers clear trains
+  ROLL_TIME: 0.55,
+  LANE_TIME: 0.2,      // seconds for a lane dash
+  SPEED_START: 17,
+  SPEED_MAX: 33,
+  SPEED_RAMP: 110,      // metres per +1 m/s
   TRAIN_H: 3.2,
   TRAIN_W: 2.2,
   BOOST_WINDOW: 10,     // seconds the boost is offered

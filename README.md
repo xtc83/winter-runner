@@ -22,6 +22,8 @@ Ein 3D-Endless-Runner im Browser (Three.js). Läuft komplett ohne Server.
 
 - Winter-Map mit Schneefall, Tannen, Lichterketten, Häusern und Schneemännern
 - Stehende und entgegenkommende Züge, Rampen auf die Zugdächer, Barrieren zum Springen/Rollen
+- Auf Barrieren und Rollen-Balken kann man draufspringen und von dort weiter aufs Zugdach
+- Gebaute Streckenabschnitte (Zug-Gasse, Dächer-Route, Treppchen, Slalom, Gegenverkehr, Barrierenreihen …)
 - Start-Boost (ca. 650 m Raketenflug)
 - Münzen, die man auch komplett meiden kann → **No-Coin-Lauf** mit eigenem Rekord
 - Power-ups: Magnet, Super-Sprung, Jetpack, 2x-Punkte
@@ -41,6 +43,7 @@ js/models.js        3D-Modelle aus Grundformen
 js/maps/winter.js   Winter-Map (Farben, Deko) – neue Maps = neue Datei
 js/world.js         Streckengenerator, Hindernisse, Münzen, Power-ups
 js/player.js        Spielfigur, Physik, Animation
+js/effects.js       Schneestaub, Funkeln, Speed-Linien
 js/game.js          Spielschleife, Steuerung, Kollisionen, HUD
 ```
 

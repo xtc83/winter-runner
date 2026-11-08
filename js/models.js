@@ -169,15 +169,18 @@ LS.Models = (function () {
     const g = new THREE.Group();
     const tex = stripeTexture('#ffeb3b', '#212121');
     const post = mat(0x37474f);
-    g.add(box(0.16, 2.6, 0.16, post, -1.15, 1.3, 0));
-    g.add(box(0.16, 2.6, 0.16, post, 1.15, 1.3, 0));
-    g.add(box(2.4, 0.75, 0.14, new THREE.MeshStandardMaterial({ map: tex }), 0, 1.75, 0));
-    g.add(box(2.5, 0.1, 0.22, mat(0xffffff), 0, 2.17, 0));
+    [-0.4, 0.4].forEach((z) => {
+      g.add(box(0.16, 2.2, 0.16, post, -1.15, 1.1, z));
+      g.add(box(0.16, 2.2, 0.16, post, 1.15, 1.1, z));
+    });
+    // 1 m deep beam: roll under it, or jump on top and use it as a step
+    g.add(box(2.4, 0.8, 1.0, new THREE.MeshStandardMaterial({ map: tex }), 0, 1.78, 0));
+    g.add(box(2.5, 0.12, 1.05, mat(0xffffff, { roughness: 1 }), 0, 2.2, 0));
     // little icicles
     const ice = new THREE.MeshStandardMaterial({ color: 0xd0f0ff, roughness: 0.1, transparent: true, opacity: 0.85 });
     for (let i = 0; i < 6; i++) {
       const c = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.25 + (i % 3) * 0.08, 6), ice);
-      c.rotation.x = Math.PI; c.position.set(-1.0 + i * 0.4, 1.25, 0.04); g.add(c);
+      c.rotation.x = Math.PI; c.position.set(-1.0 + i * 0.4, 1.28, 0.45); g.add(c);
     }
     return g;
   }

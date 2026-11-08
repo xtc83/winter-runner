@@ -74,6 +74,7 @@
   // ---------- game objects ----------
   const world = new LS.World(scene, map);
   const player = new LS.Player(scene);
+  const fx = new LS.Effects(scene);
 
   const G = {
     state: 'menu', // menu | running | paused | dead | over
@@ -121,14 +122,18 @@
     if (G.state !== 'running') return;
     if (k === 'p' || k === 'escape') { pause(); return; }
 
-    if (k === 'arrowleft' || k === 'a') { if (player.left()) A.sfx.lane(); }
-    else if (k === 'arrowright' || k === 'd') { if (player.right()) A.sfx.lane(); }
+    if (k === 'arrowleft' || k === 'a') { if (player.left()) laneFx(); }
+    else if (k === 'arrowright' || k === 'd') { if (player.right()) laneFx(); }
     else if (k === 'arrowup' || k === 'w' || k === ' ') {
-      if (player.jump(!!G.power.sneakers)) (G.power.sneakers ? A.sfx.superJump : A.sfx.jump)();
-    } else if (k === 'arrowdown' || k === 's') { if (player.roll() && player.grounded) A.sfx.roll(); }
+      if (player.jump(!!G.power.sneakers)) { (G.power.sneakers ? A.sfx.superJump : A.sfx.jump)(); fx.snowPuff(player.x, player.groundH, player.z, 6); }
+    } else if (k === 'arrowdown' || k === 's') { if (player.roll() && player.grounded) { A.sfx.roll(); fx.snowPuff(player.x, player.y, player.z, 6); } }
     else if (k === 'e') tryBoost();
   });
 
+  function laneFx() {
+    A.sfx.lane();
+    if (player.grounded) fx.snowPuff(player.x, player.y, player.z, 5);
+  }
   function pause() { if (G.state !== 'running') return; G.state = 'paused'; show('pause'); A.stopLoop(); A.stopMusic(); }
   function resume() { G.state = 'running'; hide('pause'); A.startMusic(); if (player.flying) A.startLoop(); last = performance.now(); }
   window.addEventListener('blur', pause);
@@ -182,6 +187,7 @@
 
   // ---------- collisions ----------
   function crash() {
+    fx.burst(new THREE.Vector3(player.x, player.y + 1, player.z - 0.5), 0xffffff);
     player.die();
     G.state = 'dead'; G.deadT = 0; G.shake = 0.6;
     A.sfx.crash(); A.stopLoop();
@@ -230,13 +236,13 @@
       } else {
         hit = Math.abs(p.x - player.x) < 0.9 && p.z > zA && p.z < zB && p.y > py0 - 0.5 && p.y < py1 + 0.3;
       }
-      if (hit) { c.taken = true; G.coins++; A.sfx.coin(); }
+      if (hit) { c.taken = true; G.coins++; A.sfx.coin(); fx.sparkle(p); }
     }
     for (const pu of world.powerups) {
       if (pu.taken) continue;
       const p = pu.mesh.position;
       if (Math.abs(p.x - player.x) < 1.0 && p.z > zA - 0.3 && p.z < zB + 0.3 && p.y > py0 - 0.6 && p.y < py1 + 0.5) {
-        pu.taken = true; activatePower(pu.type);
+        pu.taken = true; fx.burst(p, 0xffffff); activatePower(pu.type);
       }
     }
   }
@@ -308,22 +314,24 @@
   }
 
   // ---------- camera ----------
-  const camPos = new THREE.Vector3(0, 4, 8);
-  const camLook = new THREE.Vector3(0, 1, -8);
+  // Low chase camera that follows lane dashes with a little lag and roll.
+  const cam = { x: 0, y: 3.6, lookX: 0, roll: 0, dip: 0 };
   function updateCamera(dt, t) {
-    const fy = player.flying ? player.y * 0.55 : player.y * 0.6;
-    const tp = new THREE.Vector3(player.x * 0.7, 4.2 + fy, player.z + (player.flying ? 6.2 : 7.5));
-    camPos.x = LS.damp(camPos.x, tp.x, 8, dt);
-    camPos.y = LS.damp(camPos.y, tp.y, 5, dt);
-    camPos.z = tp.z;
-    camLook.set(player.x * 0.75, 1.3 + fy, player.z - 8);
-    camera.position.copy(camPos);
+    const fy = player.flying ? player.y * 0.55 : player.y * 0.7;
+    cam.x = LS.damp(cam.x, player.x * 0.85, 7, dt);
+    cam.lookX = LS.damp(cam.lookX, player.x, 12, dt);
+    cam.y = LS.damp(cam.y, 3.5 + fy, player.vy < 0 ? 6 : 4, dt);
+    cam.dip = LS.damp(cam.dip, 0, 6, dt);
+    cam.roll = LS.damp(cam.roll, -player.vx * 0.006, 10, dt);
+    const back = player.flying ? 6.0 : 6.6;
+    camera.position.set(cam.x, cam.y - cam.dip, player.z + back);
     if (G.shake > 0) {
       camera.position.x += (Math.random() - 0.5) * G.shake;
       camera.position.y += (Math.random() - 0.5) * G.shake;
     }
-    camera.lookAt(camLook);
-    const fov = G.boosting ? 80 : player.flying ? 70 : 65 + (G.speed - C.SPEED_START) * 0.25;
+    camera.lookAt(cam.lookX * 0.9, 1.2 + fy - cam.dip * 0.5, player.z - 9);
+    camera.rotateZ(cam.roll);
+    const fov = G.boosting ? 82 : player.flying ? 70 : 64 + (G.speed - C.SPEED_START) * 0.35;
     camera.fov = LS.damp(camera.fov, fov, 3, dt);
     camera.updateProjectionMatrix();
     sun.position.set(player.x + 10, 26, player.z + 6);
@@ -346,8 +354,10 @@
       G.speed = LS.damp(G.speed, target, G.boosting ? 2.5 : 1.5, dt);
 
       const ev = player.update(dt, world, G.speed);
-      if (ev === 'land') A.sfx.land();
+      if (ev === 'land' || ev === 'roll') { A.sfx.land(); cam.dip = 0.25; fx.snowPuff(player.x, player.y, player.z, 10); }
       if (ev === 'roll') A.sfx.roll();
+      if (ev === 'jump') A.sfx.jump();
+      if (ev === 'superjump') A.sfx.superJump();
       const nd = -player.z;
       G.score += (nd - d) * (G.power.double ? 2 : 1);
 
@@ -373,6 +383,7 @@
     }
     if (G.shake > 0) G.shake = Math.max(0, G.shake - dt * 1.5);
     updateCamera(dt, t);
+    fx.update(dt, camera, G.state === 'running' ? G.speed : 0, G.boosting && G.state === 'running');
     updateSnow(dt, t);
     renderer.render(scene, camera);
   }
