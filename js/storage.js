@@ -3,7 +3,7 @@ LS.Storage = (function () {
   const KEY = 'lucasurfers.v1';
   const defaults = {
     bestScore: 0, bestDist: 0, bestNoCoin: 0, totalCoins: 0, runs: 0,
-    musicVol: 35, sfxVol: 70, muted: false,
+    musicVol: 35, sfxVol: 70, muted: false, quality: 'auto',
   };
   let data = Object.assign({}, defaults);
   try {

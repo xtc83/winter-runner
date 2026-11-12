@@ -1,15 +1,25 @@
 // Player state, physics and animation.
 LS.Player = class {
   constructor(scene) {
-    this.mesh = LS.Models.player();
+    this.scene = scene;
+    this.rig = new LS.KidRig();
+    this.mesh = this.rig.root;
     scene.add(this.mesh);
-    this.parts = this.mesh.userData;
     // fake blob shadow so the player stays readable on train roofs
-    this.blob = new THREE.Mesh(new THREE.CircleGeometry(0.45, 16),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false }));
+    this.blob = new THREE.Mesh(new THREE.CircleGeometry(0.5, 20),
+      new THREE.MeshBasicMaterial({ color: 0x1b2238, transparent: true, opacity: 0.28, depthWrite: false }));
     this.blob.rotation.x = -Math.PI / 2;
     scene.add(this.blob);
     this.reset();
+  }
+
+  // swap the character model (e.g. once the animated robot has loaded)
+  setRig(rig) {
+    this.scene.remove(this.mesh);
+    this.rig = rig; this.mesh = rig.root;
+    this.scene.add(this.mesh);
+    this.mesh.position.set(this.x, this.y, this.z);
+    rig.reset();
   }
 
   reset() {
@@ -25,10 +35,7 @@ LS.Player = class {
     this.groundH = 0;
     this.fromX = 0; this.laneT = 1; this.dir = 0; this.prevX = 0; this.vx = 0;
     this.mesh.rotation.set(0, 0, 0);
-    this.parts.body.rotation.set(0, 0, 0);
-    this.parts.body.position.set(0, 0, 0);
-    this.parts.body.scale.set(1, 1, 1);
-    this.parts.pack.visible = false;
+    this.rig.reset();
   }
 
   get height() { return this.rollT > 0 ? LS.CFG.PLAYER_H_ROLL : LS.CFG.PLAYER_H; }
@@ -118,11 +125,42 @@ LS.Player = class {
     const side = this.laneT < 1 ? Math.sin(Math.PI * this.laneT) : 0;
     this.mesh.rotation.y = -this.dir * 0.55 * side;
     this.mesh.rotation.z = -this.dir * 0.22 * side;
+    this.rig.animate(dt, this, speed, side);
+  }
+
+  die() {
+    this.dead = true; this.deadT = 0; this.flyY = null; this.rollT = 0;
+    this.rig.pack.visible = false;
+  }
+
+  animateDeath(dt) {
+    this.deadT += dt;
+    this.z += Math.max(0, 1.5 - this.deadT * 6) * dt * 3; // knocked back a bit
+    if (this.y > this.groundH) this.y = Math.max(this.groundH, this.y - dt * 8);
+    this.mesh.position.set(this.x, this.y, this.z);
+    this.mesh.rotation.set(0, 0, 0);
+    this.rig.death(dt, this);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Rigs: how a character model is posed. All rigs expose root, pack, flames,
+// reset(), animate(dt, player, speed, side) and death(dt, player).
+// ---------------------------------------------------------------------------
+
+// Blocky kid animated by rotating its parts (fallback, works without model files).
+LS.KidRig = class {
+  constructor() { Object.assign(this, LS.Models.kid()); this.phase = 0; }
+  reset() {
+    this.body.rotation.set(0, 0, 0); this.body.position.set(0, 0, 0); this.body.scale.set(1, 1, 1);
+    this.pack.visible = false;
+  }
+  animate(dt, pl, speed, side) {
+    const p = this;
     this.phase += dt * (6 + speed * 0.32);
     const s = Math.sin(this.phase);
-
-    p.pack.visible = this.flying;
-    if (this.flying) {
+    p.pack.visible = pl.flying;
+    if (pl.flying) {
       p.body.rotation.x = -0.35;
       p.legL.rotation.x = 0.4 + s * 0.1; p.legR.rotation.x = 0.3 - s * 0.1;
       p.armL.rotation.x = 0.6; p.armR.rotation.x = 0.6;
@@ -133,10 +171,8 @@ LS.Player = class {
       return;
     }
     p.armL.rotation.z = 0; p.armR.rotation.z = 0;
-
-    if (this.rollT > 0) {
-      // tuck and spin
-      const t = 1 - this.rollT / LS.CFG.ROLL_TIME;
+    if (pl.rollT > 0) {
+      const t = 1 - pl.rollT / LS.CFG.ROLL_TIME;
       p.body.rotation.x = -t * Math.PI * 2;
       p.body.position.y = 0.45; p.body.scale.set(1, 0.5, 1);
       p.legL.rotation.x = p.legR.rotation.x = -1.2;
@@ -144,10 +180,8 @@ LS.Player = class {
       return;
     }
     p.body.position.y = 0; p.body.scale.set(1, 1, 1);
-
-    if (!this.grounded) {
-      // tuck knees on the way up, stretch out on the way down
-      const up = LS.clamp(this.vy / 10, -1, 1);
+    if (!pl.grounded) {
+      const up = LS.clamp(pl.vy / 10, -1, 1);
       p.body.rotation.x = -0.2 * up;
       p.legL.rotation.x = -1.3 * Math.max(0, up) - 0.2; p.legR.rotation.x = -0.6 * Math.max(0, up) + 0.3;
       p.armL.rotation.x = -2.2 + up * 0.4; p.armR.rotation.x = -1.6 - up * 0.3;
@@ -161,23 +195,75 @@ LS.Player = class {
     if (side > 0) { p.legL.rotation.x *= 0.4; p.legR.rotation.x *= 0.4; p.armL.rotation.z = -0.4 * side; p.armR.rotation.z = 0.4 * side; }
     p.scarfTail.rotation.x = 0.4 + Math.sin(this.phase * 2) * 0.2;
   }
-
-  die() {
-    this.dead = true; this.deadT = 0; this.flyY = null; this.rollT = 0;
-    this.parts.pack.visible = false;
-  }
-
-  animateDeath(dt) {
-    this.deadT += dt;
-    const p = this.parts;
-    const t = Math.min(1, this.deadT * 3);
+  death(dt, pl) {
+    const p = this, t = Math.min(1, pl.deadT * 3);
     p.body.scale.set(1, 1, 1); p.body.position.y = 0;
     p.body.rotation.x = LS.lerp(0, 1.4, t);
     p.armL.rotation.x = p.armR.rotation.x = -2.5 * t;
     p.armL.rotation.z = -0.8 * t; p.armR.rotation.z = 0.8 * t;
-    this.z += Math.max(0, 1.5 - this.deadT * 6) * dt * 3; // knocked back a bit
-    if (this.y > this.groundH) this.y = Math.max(this.groundH, this.y - dt * 8);
-    this.mesh.position.set(this.x, this.y, this.z);
   }
 };
 
+// Skinned robot with real animation clips (Running, Jump, Idle, Death).
+LS.RobotRig = class {
+  constructor(parts) {
+    Object.assign(this, parts);
+    this.cur = null; this.curAction = null;
+    this.reset();
+  }
+  play(name, fade = 0.12) {
+    if (this.cur === name) return this.curAction;
+    const a = this.actions[name];
+    if (!a) return this.curAction;
+    a.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+    if (this.curAction) this.curAction.fadeOut(fade);
+    this.cur = name; this.curAction = a;
+    return a;
+  }
+  pose(roll) {
+    const b = this.body;
+    if (roll == null) { b.rotation.set(0, 0, 0); b.position.set(0, 0, 0); b.scale.set(1, 1, 1); this.model.position.y = 0; return; }
+    // curl into a ball that spins around its centre
+    this.model.position.y = -0.95;
+    b.position.y = 0.52; b.scale.setScalar(0.56);
+    b.rotation.set(-roll * Math.PI * 2, 0, 0);
+  }
+  reset() {
+    this.mixer.stopAllAction(); this.cur = null; this.curAction = null;
+    this.pose(null); this.pack.visible = false;
+    this.play('Idle', 0); this.mixer.update(0);
+  }
+  animate(dt, pl, speed, side) {
+    this.pack.visible = pl.flying;
+    if (pl.flying) {
+      this.pose(null);
+      this.body.rotation.x = -0.55; this.body.position.y = 0.15;
+      const a = this.play('Running'); if (a) a.timeScale = 0.35;
+      const f = 0.8 + Math.random() * 0.5;
+      this.flames.forEach((fl) => { fl.scale.set(1, f, 1); });
+    } else if (pl.rollT > 0) {
+      this.pose(1 - pl.rollT / LS.CFG.ROLL_TIME);
+      const a = this.play('Running'); if (a) a.timeScale = 2;
+    } else if (!pl.grounded) {
+      this.pose(null);
+      const a = this.play('Jump', 0.06);
+      if (a) a.timeScale = a.getClip().duration / 0.75;
+      this.body.rotation.x = -0.12 * LS.clamp(pl.vy / 10, -1, 1);
+    } else if (speed < 1) {
+      this.pose(null); this.play('Idle', 0.2);
+    } else {
+      this.pose(null);
+      const a = this.play('Running', 0.1);
+      if (a) a.timeScale = LS.clamp(speed / 15, 1.0, 2.0);
+      this.body.rotation.x = -0.1;
+      this.body.position.y = side * 0.16;
+    }
+    this.mixer.update(dt);
+  }
+  death(dt, pl) {
+    this.pose(null); this.pack.visible = false;
+    const a = this.play('Death', 0.06);
+    if (a) a.timeScale = 1.6;
+    this.mixer.update(dt);
+  }
+};

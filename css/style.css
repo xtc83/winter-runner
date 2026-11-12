@@ -55,3 +55,5 @@ button.big:active { transform: translateY(3px); box-shadow: 0 3px 0 #b85400; }
 .result b { color: #ffd84a; }
 #newRecord { font-size: 24px; font-weight: 900; color: #ffd84a; margin-bottom: 8px; animation: pulse2 .5s infinite alternate; }
 @keyframes pulse2 { from { transform: scale(1); } to { transform: scale(1.1); } }
+
+.settings select { width: 60%; padding: 4px 8px; border-radius: 8px; border: none; font-family: inherit; font-weight: 700; }

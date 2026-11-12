@@ -44,6 +44,7 @@
     <div class="settings">
       <label>Musik <input type="range" id="musicVol" min="0" max="100" value="35"></label>
       <label>Effekte <input type="range" id="sfxVol" min="0" max="100" value="70"></label>
+      <label>Grafik <select id="quality"><option value="auto">Automatisch</option><option value="high">Hoch</option><option value="medium">Mittel</option><option value="low">Niedrig</option></select></label>
       <label class="file">Eigene Musik (MP3, nur lokal)<input type="file" id="musicFile" accept="audio/*"></label>
     </div>
   </div>
@@ -75,6 +76,7 @@
 </div>
 
 <script src="lib/three.min.js"></script>
+<script src="lib/three-addons.min.js"></script>
 <script src="js/core.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/audio.js"></script>

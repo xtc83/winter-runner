@@ -4,8 +4,8 @@ Ein 3D-Endless-Runner im Browser (Three.js). Läuft komplett ohne Server.
 
 ## Spielen
 
-- **Lokal:** `index.html` per Doppelklick im Browser öffnen (Chrome, Edge, Firefox).
-- **Online:** über GitHub Pages (siehe unten).
+- **Online (empfohlen):** https://xtc83.github.io/winter-runner/ – mit animierter Roboter-Figur.
+- **Lokal:** `index.html` per Doppelklick öffnen. Funktioniert, zeigt aber eine einfachere Ersatzfigur, weil Browser bei lokalen Dateien keine 3D-Modelle laden.
 
 ## Steuerung
 
@@ -30,16 +30,29 @@ Ein 3D-Endless-Runner im Browser (Three.js). Läuft komplett ohne Server.
 - Highscores werden lokal im Browser gespeichert
 - Musik und Soundeffekte werden live synthetisiert (Jingle Bells, gemeinfrei). Eigene MP3 lokal ladbar.
 
+## Grafik
+
+Cartoon-Look mit Toon-Shading, dunklen Konturen und Leuchteffekten. Im Menü lässt sich die
+Grafikstufe wählen (Automatisch / Hoch / Mittel / Niedrig). „Automatisch" schaltet selbst
+herunter, wenn das Spiel nicht flüssig läuft.
+
+## Credits
+
+- Roboter-Figur: „RobotExpressive" von Tomás Laulhé (Quaternius), Anpassungen von Don McCurdy – CC0 1.0
+- Three.js (MIT)
+
 ## Projektstruktur
 
 ```
 index.html          Seite + Menüs
 css/style.css       HUD / Menü-Design
 lib/three.min.js    Three.js r160 (MIT)
+lib/three-addons.min.js  Three.js-Zusätze gebündelt (Modell-Lader, Leuchteffekt, runde Boxen)
+assets/robot.glb    Animierte Spielfigur (CC0)
 js/core.js          Konstanten, Seed-Zufallsgenerator
 js/storage.js       Highscores (localStorage)
 js/audio.js         Sounds + Musik (Web Audio)
-js/models.js        3D-Modelle aus Grundformen
+js/models.js        Cartoon-Modelle (Toon-Material, Konturen), Roboter-Lader
 js/maps/winter.js   Winter-Map (Farben, Deko) – neue Maps = neue Datei
 js/world.js         Streckengenerator, Hindernisse, Münzen, Power-ups
 js/player.js        Spielfigur, Physik, Animation

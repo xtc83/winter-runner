@@ -5,34 +5,80 @@
   const map = LS.Maps.winter;
 
   // ---------- renderer / scene ----------
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  const ADD = window.THREE_ADDONS || {};
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMapping = THREE.NoToneMapping; // flat, saturated cartoon colours
   $('game').appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   scene.background = map.skyTexture();
   scene.fog = new THREE.Fog(map.fog.color, map.fog.near, map.fog.far);
 
-  const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
+  const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
   const hemi = new THREE.HemisphereLight(map.hemi.sky, map.hemi.ground, map.hemi.intensity);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(map.sun.color, map.sun.intensity);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 30, bottom: -30, near: 1, far: 90 });
-  sun.shadow.bias = -0.0005;
+  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 34, bottom: -30, near: 1, far: 100 });
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
   scene.add(sun); scene.add(sun.target);
+
+  // ---------- quality levels (auto steps down if the frame rate is low) ----------
+  const QUALITY = {
+    high:   { pr: 2,    bloom: true,  shadow: 2048 },
+    medium: { pr: 1.5,  bloom: false, shadow: 1024 },
+    low:    { pr: 1,    bloom: false, shadow: 0 },
+  };
+  const forcedQ = new URLSearchParams(location.search).get('q');
+  let quality = 'high', composer = null;
+  function applyQuality(name) {
+    quality = name;
+    const q = QUALITY[name], w = window.innerWidth, h = window.innerHeight;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pr));
+    renderer.setSize(w, h);
+    renderer.shadowMap.enabled = q.shadow > 0;
+    sun.castShadow = q.shadow > 0;
+    if (q.shadow) {
+      sun.shadow.mapSize.set(q.shadow, q.shadow);
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    }
+    scene.traverse((o) => {
+      if (!o.material) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; });
+    });
+    if (composer) { composer.dispose(); composer = null; }
+    if (q.bloom && ADD.EffectComposer) {
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+      const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+      composer = new ADD.EffectComposer(renderer, rt);
+      composer.addPass(new ADD.RenderPass(scene, camera));
+      composer.addPass(new ADD.UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.5, 0.55, 1.02));
+      composer.addPass(new ADD.OutputPass());
+    }
+  }
+  function pickQuality() { return forcedQ in QUALITY ? forcedQ : (S.quality in QUALITY ? S.quality : 'high'); }
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    applyQuality(quality);
   });
+
+  // frame-rate watchdog for "Auto"
+  const perf = { t: 0, n: 0, warm: 0 };
+  function watchPerf(dt) {
+    if (forcedQ in QUALITY || (S.quality && S.quality !== 'auto')) return;
+    perf.warm += dt;
+    if (perf.warm < 1.5) return;
+    perf.t += dt; perf.n++;
+    if (perf.n < 90) return;
+    const avg = perf.t / perf.n;
+    perf.t = 0; perf.n = 0;
+    if (avg > 1 / 42 && quality !== 'low') {
+      applyQuality(quality === 'high' ? 'medium' : 'low');
+      perf.warm = 0;
+    }
+  }
 
   // ---------- snowfall ----------
   let snow = null;
@@ -51,7 +97,7 @@
     gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
     snow = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 0.22, map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, opacity: 0.9,
+      size: 0.3, map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, opacity: 0.9,
     }));
     snow.frustumCulled = false;
     scene.add(snow);
@@ -75,6 +121,9 @@
   const world = new LS.World(scene, map);
   const player = new LS.Player(scene);
   const fx = new LS.Effects(scene);
+  applyQuality(pickQuality());
+  // animated robot replaces the blocky fallback kid once it has loaded
+  LS.Models.loadRobot((parts) => { if (parts) player.setRig(new LS.RobotRig(parts)); });
 
   const G = {
     state: 'menu', // menu | running | paused | dead | over
@@ -334,7 +383,7 @@
     const fov = G.boosting ? 82 : player.flying ? 70 : 64 + (G.speed - C.SPEED_START) * 0.35;
     camera.fov = LS.damp(camera.fov, fov, 3, dt);
     camera.updateProjectionMatrix();
-    sun.position.set(player.x + 10, 26, player.z + 6);
+    sun.position.set(player.x + 14, 30, player.z + 10);
     sun.target.position.set(player.x, 0, player.z - 10);
   }
 
@@ -373,6 +422,7 @@
       collect(dt);
       checkObstacles();
       updateHud();
+      watchPerf(dt);
     } else if (G.state === 'dead') {
       player.update(dt, world, 0);
       G.deadT += dt;
@@ -385,7 +435,7 @@
     updateCamera(dt, t);
     fx.update(dt, camera, G.state === 'running' ? G.speed : 0, G.boosting && G.state === 'running');
     updateSnow(dt, t);
-    renderer.render(scene, camera);
+    if (composer) composer.render(dt); else renderer.render(scene, camera);
   }
 
   // ---------- menu wiring ----------
@@ -402,10 +452,16 @@
   $('musicVol').value = S.musicVol; $('sfxVol').value = S.sfxVol;
   $('musicVol').oninput = (e) => { S.musicVol = +e.target.value; A.setVolumes(S.musicVol, S.sfxVol); LS.Storage.save(); };
   $('sfxVol').oninput = (e) => { S.sfxVol = +e.target.value; A.setVolumes(S.musicVol, S.sfxVol); LS.Storage.save(); };
+  $('quality').value = S.quality || 'auto';
+  $('quality').onchange = (e) => {
+    S.quality = e.target.value; LS.Storage.save();
+    perf.warm = 0; perf.n = 0; perf.t = 0;
+    applyQuality(S.quality === 'auto' ? 'high' : S.quality);
+  };
   $('musicFile').onchange = (e) => { if (e.target.files[0]) { A.setCustomMusic(e.target.files[0]); toast('Eigene Musik geladen', 1200); } };
 
   // debug hook for automated tests
-  window.__game = { G, player, world, startRun };
+  window.__game = { G, player, world, startRun, scene, camera, renderer, getQuality: () => quality };
 
   newRun();
   renderRecords();

@@ -10,43 +10,47 @@ LS.World = class {
 
   buildStatic() {
     const { scene, map } = this;
-    const C = LS.CFG;
+    const C = LS.CFG, M = LS.Models;
     this.static = new THREE.Group();
     scene.add(this.static);
+    const L = 480;
 
     const snowTex = map.snowTexture();
-    snowTex.repeat.set(30, 60);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 480),
-      new THREE.MeshStandardMaterial({ map: snowTex, roughness: 1 }));
+    snowTex.repeat.set(16, 32);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(260, L), M.texToon(snowTex));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.02; ground.receiveShadow = true;
     this.static.add(ground);
 
     const trackTex = map.trackTexture();
-    trackTex.repeat.set(1, 240);
-    const trackMat = new THREE.MeshStandardMaterial({ map: trackTex, roughness: 0.95 });
-    const railMat = new THREE.MeshStandardMaterial({ color: 0x9aa4ad, metalness: 0.8, roughness: 0.3 });
+    trackTex.repeat.set(1, L / 2);
+    const trackMat = M.texToon(trackTex);
+    const g = new THREE.Group();
     C.LANES.forEach((x) => {
-      const t = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 480), trackMat);
+      const t = new THREE.Mesh(new THREE.PlaneGeometry(2.5, L), trackMat);
       t.rotation.x = -Math.PI / 2; t.position.set(x, 0.0, 0); t.receiveShadow = true;
       this.static.add(t);
       [-0.72, 0.72].forEach((rx) => {
-        const r = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 480), railMat);
-        r.position.set(x + rx, 0.07, 0); r.receiveShadow = true;
-        this.static.add(r);
+        g.add(M.box(0.13, 0.16, L, M.toon(0x76839a), x + rx, 0.08, 0));
+        g.add(M.box(0.05, 0.02, L, M.toon(0xdfe7f2), x + rx, 0.165, 0)); // shiny top
       });
     });
-    // snow banks along the track
-    const bankMat = new THREE.MeshStandardMaterial({ color: map.bankColor, roughness: 1 });
+    // snow between the tracks and rounded banks along the sides
+    const bank = M.toon(map.bankColor);
     [-1, 1].forEach((s) => {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.6, 480), bankMat);
-      b.position.set(s * 4.5, 0.25, 0); b.receiveShadow = true; b.castShadow = true;
-      this.static.add(b);
-      const b2 = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 480, 8), bankMat);
-      b2.rotation.x = Math.PI / 2; b2.position.set(s * 4.5, 0.55, 0); b2.receiveShadow = true;
-      this.static.add(b2);
+      const b = M.cyl(0.75, 0.75, L, 10, bank, s * 4.55, 0.1, 0); b.rotation.x = Math.PI / 2; b.scale.set(1, 0.8, 1); g.add(b);
     });
+    const baked = M.bake(g, { outline: false, shadow: false });
+    this.static.add(baked);
+
     this.backdrop = map.backdrop();
     scene.add(this.backdrop);
+
+    // all coins share one instanced mesh
+    const cp = M.coinParts();
+    this.coinMesh = new THREE.InstancedMesh(cp.geo, cp.mats, 700);
+    this.coinMesh.frustumCulled = false; this.coinMesh.count = 0;
+    scene.add(this.coinMesh);
+    this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(1, 1, 1); this._up = new THREE.Vector3(0, 1, 0);
   }
 
   reset(seed) {
@@ -59,7 +63,7 @@ LS.World = class {
     this.powerups = [];
     this.decor = [];
     this.genD = 70;        // first obstacles after a calm run-up
-    this.decoD = -30;
+    this.decoD = -this.map.chunkLen;
     this.lastPattern = null;
     this.safe = [];        // [{from,to}] distances with no obstacles (boost / jetpack landing)
   }
@@ -67,7 +71,6 @@ LS.World = class {
   clearAll() {
     const rm = (o) => this.scene.remove(o.mesh || o);
     (this.obstacles || []).forEach(rm);
-    (this.coins || []).forEach(rm);
     (this.powerups || []).forEach(rm);
     (this.decor || []).forEach((chunk) => chunk.objs.forEach((o) => this.scene.remove(o)));
   }
@@ -91,9 +94,10 @@ LS.World = class {
     const d = -player.z;
     while (this.genD < d + 230) this.genBlock(this.genD);
     while (this.decoD < d + 200) {
-      const objs = this.map.decorate(this.scene, this.decoD, this.decoD + 40, this.decoRng);
-      this.decor.push({ d1: this.decoD + 40, objs });
-      this.decoD += 40;
+      const len = this.map.chunkLen;
+      const objs = this.map.decorate(this.scene, this.decoD, this.decoRng);
+      this.decor.push({ d1: this.decoD + len, objs });
+      this.decoD += len;
     }
     // keep static track under the player (snap to texture tile so sleepers don't swim)
     this.static.position.z = Math.round(player.z / 8) * 8;
@@ -114,7 +118,7 @@ LS.World = class {
     // cleanup behind the camera
     const behind = player.z + 18;
     this.obstacles = this.obstacles.filter((o) => (o.zFar > behind ? (this.scene.remove(o.mesh), false) : true));
-    this.coins = this.coins.filter((c) => (c.mesh.position.z > behind || c.taken ? (this.scene.remove(c.mesh), false) : true));
+    this.coins = this.coins.filter((c) => !(c.mesh.position.z > behind || c.taken));
     this.powerups = this.powerups.filter((p) => (p.mesh.position.z > behind || p.taken ? (this.scene.remove(p.mesh), false) : true));
     this.decor = this.decor.filter((ch) => {
       if (-ch.d1 > behind + 10) { ch.objs.forEach((o) => this.scene.remove(o)); return false; }
@@ -124,7 +128,18 @@ LS.World = class {
 
     // spin coins / power-ups
     const t = performance.now() / 1000;
-    for (const c of this.coins) c.mesh.rotation.y += dt * 4;
+    let n = 0;
+    const max = this.coinMesh.instanceMatrix.count;
+    for (const c of this.coins) {
+      if (n >= max) break;
+      const p = c.mesh.position;
+      this._q.setFromAxisAngle(this._up, t * 3.5 + p.z * 0.25);
+      this._m.compose(p, this._q, this._s);
+      this.coinMesh.setMatrixAt(n++, this._m);
+    }
+    this.coinMesh.count = n;
+    this.coinMesh.instanceMatrix.needsUpdate = true;
+    if (this.backdrop.userData.clouds) this.backdrop.userData.clouds.position.x = Math.sin(t * 0.02) * 40;
     for (const p of this.powerups) {
       p.mesh.position.y = p.y + Math.sin(t * 3 + p.phase) * 0.15;
       p.mesh.userData.ring.rotation.y += dt * 2;
@@ -304,10 +319,8 @@ LS.World = class {
   }
 
   addCoin(x, d, y) {
-    const mesh = LS.Models.coin();
-    mesh.position.set(x, y, -d);
-    this.scene.add(mesh);
-    this.coins.push({ mesh, taken: false, magnet: false });
+    // lightweight stand-in; the instanced mesh draws it
+    this.coins.push({ mesh: { position: new THREE.Vector3(x, y, -d) }, taken: false, magnet: false });
   }
 
   addPowerup(type, x, d, y) {
